@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 
 interface Job {
   id: string
@@ -10,6 +10,7 @@ interface Job {
   created_at: string
   transcript_path: string | null
   report_path: string | null
+  notes: string | null
 }
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -21,21 +22,81 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   error:        { label: 'Errore',       className: 'bg-red-50 text-red-700 border-red-200' },
 }
 
+function NoteCell({ job }: { job: Job }) {
+  const [value, setValue] = useState(job.notes ?? '')
+  const [saving, setSaving] = useState(false)
+  const lastSaved = useRef(job.notes ?? '')
+
+  async function save() {
+    if (value === lastSaved.current) return
+    setSaving(true)
+    await fetch(`/api/jobs/${job.id}/notes`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: value }),
+    })
+    lastSaved.current = value
+    setSaving(false)
+  }
+
+  return (
+    <div className="relative">
+      <textarea
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={save}
+        rows={2}
+        placeholder="Aggiungi una nota…"
+        className="w-full min-w-[160px] text-xs text-gray-700 bg-transparent border border-transparent hover:border-gray-200 focus:border-gray-300 focus:bg-white rounded-lg px-2 py-1.5 resize-none outline-none transition-colors placeholder:text-gray-300"
+      />
+      {saving && <span className="absolute bottom-1 right-1 text-[10px] text-gray-300">salvo…</span>}
+    </div>
+  )
+}
+
 export default function ReportsTable({ jobs }: { jobs: Job[] }) {
   const [previewJob, setPreviewJob] = useState<Job | null>(null)
   const [previewContent, setPreviewContent] = useState('')
   const [previewType, setPreviewType] = useState<'transcript' | 'report'>('report')
   const [loadingPreview, setLoadingPreview] = useState(false)
+  const [downloading, setDownloading] = useState<string | null>(null)
 
-  async function download(jobId: string, type: 'transcript' | 'report') {
-    const res = await fetch(`/api/jobs/${jobId}/download?type=${type}`)
-    const { url } = await res.json()
+  async function triggerDownload(url: string, filename: string) {
     const a = document.createElement('a')
     a.href = url
-    a.download = type === 'transcript' ? 'trascrizione.txt' : 'resoconto.html'
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
+  }
+
+  async function download(jobId: string, type: 'transcript' | 'word' | 'all', originalName: string) {
+    const key = `${jobId}-${type}`
+    setDownloading(key)
+    try {
+      if (type === 'transcript') {
+        const res = await fetch(`/api/jobs/${jobId}/download?type=transcript`)
+        const { url } = await res.json()
+        const base = originalName.replace(/\.[^.]+$/, '')
+        await triggerDownload(url, `${base}_trascrizione.txt`)
+      } else if (type === 'word') {
+        const res = await fetch(`/api/jobs/${jobId}/download?type=word`)
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const base = originalName.replace(/\.[^.]+$/, '')
+        await triggerDownload(url, `${base}_resoconto.docx`)
+        URL.revokeObjectURL(url)
+      } else if (type === 'all') {
+        const res = await fetch(`/api/jobs/${jobId}/download?type=all`)
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const base = originalName.replace(/\.[^.]+$/, '')
+        await triggerDownload(url, `${base}.zip`)
+        URL.revokeObjectURL(url)
+      }
+    } finally {
+      setDownloading(null)
+    }
   }
 
   async function openPreview(job: Job, type: 'transcript' | 'report') {
@@ -78,6 +139,7 @@ export default function ReportsTable({ jobs }: { jobs: Job[] }) {
                 <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">File</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Stato</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Data</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Note</th>
                 <th className="text-right px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Azioni</th>
               </tr>
             </thead>
@@ -86,7 +148,7 @@ export default function ReportsTable({ jobs }: { jobs: Job[] }) {
                 const s = STATUS_CONFIG[job.status] ?? { label: job.status, className: 'bg-gray-100 text-gray-600 border-gray-200' }
                 const done = job.status === 'completed'
                 return (
-                  <tr key={job.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={job.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
@@ -94,7 +156,7 @@ export default function ReportsTable({ jobs }: { jobs: Job[] }) {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.902L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                           </svg>
                         </div>
-                        <span className="font-medium text-gray-900 truncate max-w-xs">{job.original_name}</span>
+                        <span className="font-medium text-gray-900 truncate max-w-[180px]">{job.original_name}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3.5">
@@ -105,37 +167,67 @@ export default function ReportsTable({ jobs }: { jobs: Job[] }) {
                         <p className="text-xs text-red-500 mt-0.5 max-w-xs truncate">{job.error_message}</p>
                       )}
                     </td>
-                    <td className="px-4 py-3.5 text-gray-500 text-xs">
+                    <td className="px-4 py-3.5 text-gray-500 text-xs whitespace-nowrap">
                       <div>{new Date(job.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
                       <div className="text-gray-400">{new Date(job.created_at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</div>
+                    </td>
+                    <td className="px-4 py-3.5 max-w-[220px]">
+                      <NoteCell job={job} />
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-end gap-1">
                         {done && (
                           <>
+                            {/* Anteprima trascrizione */}
                             <button onClick={() => openPreview(job, 'transcript')} title="Anteprima trascrizione"
                               className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
                               </svg>
                             </button>
+                            {/* Anteprima resoconto */}
                             <button onClick={() => openPreview(job, 'report')} title="Anteprima resoconto"
                               className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                               </svg>
                             </button>
-                            <button onClick={() => download(job.id, 'transcript')} title="Scarica .txt"
-                              className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+
+                            <div className="w-px h-4 bg-gray-200 mx-0.5" />
+
+                            {/* Scarica .txt */}
+                            <button onClick={() => download(job.id, 'transcript', job.original_name)}
+                              title="Scarica trascrizione .txt"
+                              disabled={downloading === `${job.id}-transcript`}
+                              className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                               </svg>
                             </button>
-                            <button onClick={() => download(job.id, 'report')} title="Scarica .html"
-                              className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                            {/* Scarica .docx */}
+                            <button onClick={() => download(job.id, 'word', job.original_name)}
+                              title="Scarica resoconto .docx"
+                              disabled={downloading === `${job.id}-word`}
+                              className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                               </svg>
+                            </button>
+                            {/* Scarica tutto .zip */}
+                            <button onClick={() => download(job.id, 'all', job.original_name)}
+                              title="Scarica tutto (.txt + .docx)"
+                              disabled={downloading === `${job.id}-all`}
+                              className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-40">
+                              {downloading === `${job.id}-all` ? (
+                                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                              )}
                             </button>
                           </>
                         )}
@@ -149,7 +241,7 @@ export default function ReportsTable({ jobs }: { jobs: Job[] }) {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Modal anteprima */}
       {previewJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => setPreviewJob(null)} />
@@ -157,15 +249,16 @@ export default function ReportsTable({ jobs }: { jobs: Job[] }) {
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
               <div>
                 <p className="font-semibold text-gray-900 text-sm">{previewJob.original_name}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{previewType === 'transcript' ? 'Trascrizione' : 'Resoconto HTML'}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{previewType === 'transcript' ? 'Trascrizione' : 'Resoconto'}</p>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => download(previewJob.id, previewType)}
+                <button
+                  onClick={() => download(previewJob.id, previewType === 'transcript' ? 'transcript' : 'word', previewJob.original_name)}
                   className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 hover:bg-gray-50 text-gray-600 text-xs rounded-lg transition-colors font-medium">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  Scarica
+                  {previewType === 'transcript' ? 'Scarica .txt' : 'Scarica .docx'}
                 </button>
                 <button onClick={() => setPreviewJob(null)}
                   className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">

@@ -9,7 +9,7 @@ export default async function ReportsPage() {
 
   const { data: jobs } = await supabase
     .from('jobs')
-    .select('id, original_name, status, error_message, created_at, transcript_path, report_path')
+    .select('id, original_name, status, error_message, created_at, transcript_path, report_path, notes')
     .eq('user_id', user!.id)
     .order('created_at', { ascending: false })
 

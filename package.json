@@ -16,6 +16,8 @@
     "@supabase/supabase-js": "^2.103.2",
     "@vercel/blob": "^2.3.3",
     "assemblyai": "^4.30.0",
+    "html-to-docx": "^1.8.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^1.8.0",
     "next": "^16.2.3",
     "react": "19.2.4",
