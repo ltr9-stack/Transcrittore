@@ -12,11 +12,13 @@
     "@anthropic-ai/sdk": "^0.89.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.2",
+    "@vercel/blob": "^2.3.3",
     "assemblyai": "^4.30.0",
     "lucide-react": "^1.8.0",
     "next": "^16.2.3",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "tus-js-client": "^4.3.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

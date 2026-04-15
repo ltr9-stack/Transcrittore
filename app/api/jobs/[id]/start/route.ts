@@ -26,11 +26,20 @@ export async function POST(
     return NextResponse.json({ error: 'Job non trovato' }, { status: 404 })
   }
 
-  // Avvia trascrizione AssemblyAI — video_path è un URL Vercel Blob pubblico
+  // Genera URL firmato per AssemblyAI (60 minuti)
+  const { data: signedData, error: signedError } = await supabase.storage
+    .from('videos')
+    .createSignedUrl(job.video_path, 3600)
+
+  if (signedError || !signedData) {
+    return NextResponse.json({ error: 'Impossibile generare URL video' }, { status: 500 })
+  }
+
+  // Avvia trascrizione AssemblyAI
   const client = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY! })
 
   const transcript = await client.transcripts.submit({
-    audio_url: job.video_path,
+    audio_url: signedData.signedUrl,
     speaker_labels: true,
     language_code: 'it',
     speech_model: 'universal' as unknown as 'best',
@@ -48,6 +57,9 @@ export async function POST(
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 })
   }
+
+  // Elimina il video dallo storage — non serve più (AssemblyAI ha già il job)
+  await supabase.storage.from('videos').remove([job.video_path])
 
   return NextResponse.json({ assemblyaiId: transcript.id })
 }

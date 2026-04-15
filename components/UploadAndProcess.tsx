@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { upload } from '@vercel/blob/client'
+import * as tus from 'tus-js-client'
+import { createClient } from '@/lib/supabase/client'
 
 type Stage = 'idle' | 'uploading' | 'processing' | 'transcribing' | 'summarizing' | 'completed' | 'error'
 
@@ -62,13 +63,36 @@ export default function UploadAndProcess() {
       setStreamingReport('')
 
       setStage('uploading')
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Sessione non trovata')
+
       const ext = file.name.split('.').pop()
-      const blob = await upload(`videos/${Date.now()}.${ext}`, file, {
-        access: 'public',
-        handleUploadUrl: '/api/blob-upload',
-        onUploadProgress: ({ percentage }) => setUploadProgress(Math.round(percentage)),
+      const path = `${session.user.id}/${Date.now()}.${ext}`
+
+      await new Promise<void>((resolve, reject) => {
+        const upload = new tus.Upload(file, {
+          endpoint: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/upload/resumable`,
+          retryDelays: [0, 3000, 5000, 10000, 20000],
+          headers: {
+            authorization: `Bearer ${session.access_token}`,
+            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          },
+          uploadDataDuringCreation: true,
+          removeFingerprintOnSuccess: true,
+          metadata: {
+            bucketName: 'videos',
+            objectName: path,
+            contentType: file.type,
+            cacheControl: '3600',
+          },
+          chunkSize: 6 * 1024 * 1024,
+          onError: (err) => reject(new Error(err.message)),
+          onProgress: (loaded, total) => setUploadProgress(Math.round((loaded / total) * 100)),
+          onSuccess: () => resolve(),
+        })
+        upload.start()
       })
-      const path = blob.url
 
       setStage('processing')
       const jobRes = await fetch('/api/jobs', {
