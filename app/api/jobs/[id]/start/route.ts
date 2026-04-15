@@ -1,6 +1,19 @@
 import { createClient } from '@/lib/supabase/server'
 import { AssemblyAI } from 'assemblyai'
 import { NextResponse } from 'next/server'
+import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+
+function r2Client() {
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${process.env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY!,
+    },
+  })
+}
 
 export async function POST(
   _request: Request,
@@ -14,7 +27,6 @@ export async function POST(
     return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 })
   }
 
-  // Verifica ownership del job
   const { data: job, error: jobError } = await supabase
     .from('jobs')
     .select('*')
@@ -26,20 +38,21 @@ export async function POST(
     return NextResponse.json({ error: 'Job non trovato' }, { status: 404 })
   }
 
-  // Genera URL firmato per AssemblyAI (60 minuti)
-  const { data: signedData, error: signedError } = await supabase.storage
-    .from('videos')
-    .createSignedUrl(job.video_path, 3600)
-
-  if (signedError || !signedData) {
-    return NextResponse.json({ error: 'Impossibile generare URL video' }, { status: 500 })
-  }
+  // Genera URL firmato R2 per AssemblyAI (valido 2 ore)
+  const audioUrl = await getSignedUrl(
+    r2Client(),
+    new GetObjectCommand({
+      Bucket: process.env.CLOUDFLARE_R2_BUCKET_NAME!,
+      Key: job.video_path,
+    }),
+    { expiresIn: 7200 }
+  )
 
   // Avvia trascrizione AssemblyAI
   const client = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY! })
 
   const transcript = await client.transcripts.submit({
-    audio_url: signedData.signedUrl,
+    audio_url: audioUrl,
     speaker_labels: true,
     language_code: 'it',
     speech_model: 'universal' as unknown as 'best',
@@ -48,18 +61,22 @@ export async function POST(
   // Salva assemblyai_id e aggiorna stato
   const { error: updateError } = await supabase
     .from('jobs')
-    .update({
-      assemblyai_id: transcript.id,
-      status: 'transcribing',
-    })
+    .update({ assemblyai_id: transcript.id, status: 'transcribing' })
     .eq('id', id)
 
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 })
   }
 
-  // Elimina il video dallo storage — non serve più (AssemblyAI ha già il job)
-  await supabase.storage.from('videos').remove([job.video_path])
+  // Elimina il video da R2 — AssemblyAI ha già il job in coda
+  try {
+    await r2Client().send(new DeleteObjectCommand({
+      Bucket: process.env.CLOUDFLARE_R2_BUCKET_NAME!,
+      Key: job.video_path,
+    }))
+  } catch {
+    // non bloccante
+  }
 
   return NextResponse.json({ assemblyaiId: transcript.id })
 }

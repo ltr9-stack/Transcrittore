@@ -1,8 +1,6 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import * as tus from 'tus-js-client'
-import { createClient } from '@/lib/supabase/client'
 
 type Stage = 'idle' | 'uploading' | 'processing' | 'transcribing' | 'summarizing' | 'completed' | 'error'
 
@@ -63,35 +61,25 @@ export default function UploadAndProcess() {
       setStreamingReport('')
 
       setStage('uploading')
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Sessione non trovata')
-
-      const ext = file.name.split('.').pop()
-      const path = `${session.user.id}/${Date.now()}.${ext}`
+      const urlRes = await fetch('/api/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+      })
+      if (!urlRes.ok) throw new Error('Impossibile ottenere URL di upload')
+      const { signedUrl, key } = await urlRes.json()
+      const path = key
 
       await new Promise<void>((resolve, reject) => {
-        const upload = new tus.Upload(file, {
-          endpoint: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/upload/resumable`,
-          retryDelays: [0, 3000, 5000, 10000, 20000],
-          headers: {
-            authorization: `Bearer ${session.access_token}`,
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          },
-          uploadDataDuringCreation: true,
-          removeFingerprintOnSuccess: true,
-          metadata: {
-            bucketName: 'videos',
-            objectName: path,
-            contentType: file.type,
-            cacheControl: '3600',
-          },
-          chunkSize: 6 * 1024 * 1024,
-          onError: (err) => reject(new Error(err.message)),
-          onProgress: (loaded, total) => setUploadProgress(Math.round((loaded / total) * 100)),
-          onSuccess: () => resolve(),
-        })
-        upload.start()
+        const xhr = new XMLHttpRequest()
+        xhr.open('PUT', signedUrl)
+        xhr.setRequestHeader('Content-Type', file.type)
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100))
+        }
+        xhr.onload = () => (xhr.status === 200 ? resolve() : reject(new Error(`Upload fallito: ${xhr.status} — ${xhr.responseText}`)))
+        xhr.onerror = () => reject(new Error('Errore di rete durante upload'))
+        xhr.send(file)
       })
 
       setStage('processing')
