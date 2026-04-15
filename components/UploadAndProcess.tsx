@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 type Stage = 'idle' | 'uploading' | 'processing' | 'transcribing' | 'summarizing' | 'completed' | 'error'
 
@@ -61,17 +62,19 @@ export default function UploadAndProcess() {
       setStreamingReport('')
 
       setStage('uploading')
-      const urlRes = await fetch('/api/upload-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name, contentType: file.type }),
-      })
-      if (!urlRes.ok) throw new Error('Impossibile ottenere URL di upload')
-      const { signedUrl, token, path } = await urlRes.json()
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Sessione non trovata')
+
+      const ext = file.name.split('.').pop()
+      const path = `${session.user.id}/${Date.now()}.${ext}`
+      const uploadUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/videos/${path}`
 
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
-        xhr.open('PUT', `${signedUrl}?token=${token}`)
+        xhr.open('POST', uploadUrl)
+        xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`)
+        xhr.setRequestHeader('apikey', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
         xhr.setRequestHeader('Content-Type', file.type)
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100))
