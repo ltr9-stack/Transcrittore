@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { AssemblyAI } from 'assemblyai'
 import { NextResponse } from 'next/server'
-import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 function r2Client() {
@@ -77,16 +77,6 @@ export async function POST(
 
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 })
-  }
-
-  // Elimina il video da R2 — AssemblyAI ha già il job in coda
-  try {
-    await r2Client().send(new DeleteObjectCommand({
-      Bucket: process.env.CLOUDFLARE_R2_BUCKET_NAME!,
-      Key: job.video_path,
-    }))
-  } catch {
-    // non bloccante
   }
 
   return NextResponse.json({ assemblyaiId: transcript.id })

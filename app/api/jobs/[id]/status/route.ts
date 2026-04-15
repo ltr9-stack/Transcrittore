@@ -1,6 +1,27 @@
 import { createClient } from '@/lib/supabase/server'
 import { AssemblyAI } from 'assemblyai'
 import { NextResponse } from 'next/server'
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3'
+
+function r2Client() {
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${process.env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY!,
+    },
+  })
+}
+
+async function deleteVideoFromR2(key: string) {
+  try {
+    await r2Client().send(new DeleteObjectCommand({
+      Bucket: process.env.CLOUDFLARE_R2_BUCKET_NAME!,
+      Key: key,
+    }))
+  } catch { /* non bloccante */ }
+}
 
 export async function GET(
   _request: Request,
@@ -41,7 +62,7 @@ export async function GET(
         .from('jobs')
         .update({ status: 'error', error_message: transcript.error || 'Errore AssemblyAI' })
         .eq('id', id)
-
+      await deleteVideoFromR2(job.video_path)
       return NextResponse.json({ job: { ...job, status: 'error', error_message: transcript.error } })
     }
 
@@ -65,7 +86,7 @@ export async function GET(
           upsert: true,
         })
 
-      // Aggiorna job con trascrizione pronta
+      // Aggiorna job con trascrizione pronta ed elimina video da R2
       await supabase
         .from('jobs')
         .update({
@@ -74,6 +95,7 @@ export async function GET(
           transcript_path: transcriptPath,
         })
         .eq('id', id)
+      await deleteVideoFromR2(job.video_path)
 
       return NextResponse.json({
         job: {
