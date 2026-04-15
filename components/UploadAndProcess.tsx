@@ -93,7 +93,10 @@ export default function UploadAndProcess() {
       const jobId: string = job.id
 
       const startRes = await fetch(`/api/jobs/${jobId}/start`, { method: 'POST' })
-      if (!startRes.ok) throw new Error('Impossibile avviare la trascrizione')
+      if (!startRes.ok) {
+        const { error } = await startRes.json().catch(() => ({ error: 'Errore sconosciuto' }))
+        throw new Error(error || 'Impossibile avviare la trascrizione')
+      }
 
       setStage('transcribing')
       await new Promise<void>((resolve, reject) => {

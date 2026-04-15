@@ -39,24 +39,34 @@ export async function POST(
   }
 
   // Genera URL firmato R2 per AssemblyAI (valido 2 ore)
-  const audioUrl = await getSignedUrl(
-    r2Client(),
-    new GetObjectCommand({
-      Bucket: process.env.CLOUDFLARE_R2_BUCKET_NAME!,
-      Key: job.video_path,
-    }),
-    { expiresIn: 7200 }
-  )
+  let audioUrl: string
+  try {
+    audioUrl = await getSignedUrl(
+      r2Client(),
+      new GetObjectCommand({
+        Bucket: process.env.CLOUDFLARE_R2_BUCKET_NAME!,
+        Key: job.video_path,
+      }),
+      { expiresIn: 7200 }
+    )
+  } catch (e) {
+    return NextResponse.json({ error: `R2 signed URL error: ${(e as Error).message}` }, { status: 500 })
+  }
 
   // Avvia trascrizione AssemblyAI
   const client = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY! })
 
-  const transcript = await client.transcripts.submit({
-    audio_url: audioUrl,
-    speaker_labels: true,
-    language_code: 'it',
-    speech_model: 'universal' as unknown as 'best',
-  })
+  let transcript: Awaited<ReturnType<typeof client.transcripts.submit>>
+  try {
+    transcript = await client.transcripts.submit({
+      audio_url: audioUrl,
+      speaker_labels: true,
+      language_code: 'it',
+      speech_model: 'universal' as unknown as 'best',
+    })
+  } catch (e) {
+    return NextResponse.json({ error: `AssemblyAI error: ${(e as Error).message}` }, { status: 500 })
+  }
 
   // Salva assemblyai_id e aggiorna stato
   const { error: updateError } = await supabase
