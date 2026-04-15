@@ -11,9 +11,7 @@ export default async function DashboardLayout({
 }) {
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
     redirect('/login')
@@ -25,33 +23,29 @@ export default async function DashboardLayout({
     .eq('id', user.id)
     .single()
 
-  // Gestisce sia URL esterni (http/https) che path Supabase Storage
   let avatarUrl: string | null = null
   if (profile?.avatar_url) {
     if (profile.avatar_url.startsWith('http')) {
       avatarUrl = profile.avatar_url
     } else {
-      const { data } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(profile.avatar_url)
+      const { data } = supabase.storage.from('avatars').getPublicUrl(profile.avatar_url)
       avatarUrl = data.publicUrl
     }
   }
 
-  // Mostra il display_name, non l'email interna
   const displayName = profile?.display_name ||
     user.email?.replace('@traptranscriptor.local', '') ||
     user.email?.split('@')[0] ||
     'Utente'
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-gray-50">
       <Navbar
         userDisplayName={displayName}
         userEmail={user.email?.replace('@traptranscriptor.local', '') ?? ''}
         avatarUrl={avatarUrl}
       />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
         {children}
       </main>
     </div>

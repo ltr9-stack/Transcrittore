@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic'
 
 export default async function ReportsPage() {
   const supabase = await createClient()
-
   const { data: { user } } = await supabase.auth.getUser()
 
   const { data: jobs } = await supabase
@@ -17,12 +16,9 @@ export default async function ReportsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-black text-white tracking-tight">Resoconti</h1>
-        <p className="text-slate-400 mt-1">
-          Storico di tutte le trascrizioni e i resoconti generati.
-        </p>
+        <h1 className="text-2xl font-bold text-gray-900">Resoconti</h1>
+        <p className="text-gray-500 text-sm mt-1">Storico trascrizioni e resoconti generati.</p>
       </div>
-
       <ReportsTable jobs={jobs ?? []} />
     </div>
   )
