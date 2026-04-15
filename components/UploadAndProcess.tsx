@@ -67,11 +67,11 @@ export default function UploadAndProcess() {
         body: JSON.stringify({ filename: file.name, contentType: file.type }),
       })
       if (!urlRes.ok) throw new Error('Impossibile ottenere URL di upload')
-      const { signedUrl, path } = await urlRes.json()
+      const { signedUrl, token, path } = await urlRes.json()
 
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest()
-        xhr.open('PUT', signedUrl)
+        xhr.open('PUT', `${signedUrl}?token=${token}`)
         xhr.setRequestHeader('Content-Type', file.type)
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100))
