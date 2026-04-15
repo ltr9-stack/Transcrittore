@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { upload } from '@vercel/blob/client'
 
 type Stage = 'idle' | 'uploading' | 'processing' | 'transcribing' | 'summarizing' | 'completed' | 'error'
 
@@ -62,27 +62,13 @@ export default function UploadAndProcess() {
       setStreamingReport('')
 
       setStage('uploading')
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Sessione non trovata')
-
       const ext = file.name.split('.').pop()
-      const path = `${session.user.id}/${Date.now()}.${ext}`
-      const uploadUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/videos/${path}`
-
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open('POST', uploadUrl)
-        xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`)
-        xhr.setRequestHeader('apikey', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
-        xhr.setRequestHeader('Content-Type', file.type)
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100))
-        }
-        xhr.onload = () => (xhr.status === 200 ? resolve() : reject(new Error(`Upload fallito: ${xhr.status} — ${xhr.responseText}`)))
-        xhr.onerror = () => reject(new Error('Errore di rete durante upload'))
-        xhr.send(file)
+      const blob = await upload(`videos/${Date.now()}.${ext}`, file, {
+        access: 'public',
+        handleUploadUrl: '/api/blob-upload',
+        onUploadProgress: ({ percentage }) => setUploadProgress(Math.round(percentage)),
       })
+      const path = blob.url
 
       setStage('processing')
       const jobRes = await fetch('/api/jobs', {
