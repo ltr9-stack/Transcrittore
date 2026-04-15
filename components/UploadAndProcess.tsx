@@ -79,7 +79,7 @@ export default function UploadAndProcess() {
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100))
         }
-        xhr.onload = () => (xhr.status === 200 ? resolve() : reject(new Error(`Upload fallito: ${xhr.status}`)))
+        xhr.onload = () => (xhr.status === 200 ? resolve() : reject(new Error(`Upload fallito: ${xhr.status} — ${xhr.responseText}`)))
         xhr.onerror = () => reject(new Error('Errore di rete durante upload'))
         xhr.send(file)
       })
