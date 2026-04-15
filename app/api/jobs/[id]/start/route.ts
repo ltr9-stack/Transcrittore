@@ -62,6 +62,8 @@ export async function POST(
       audio_url: audioUrl,
       speaker_labels: true,
       language_code: 'it',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      speech_models: ['universal-2'] as any,
     })
   } catch (e) {
     return NextResponse.json({ error: `AssemblyAI error: ${(e as Error).message}` }, { status: 500 })
