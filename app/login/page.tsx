@@ -6,8 +6,13 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
+// Converte username in email interna usata su Supabase
+function usernameToEmail(username: string): string {
+  return `${username.toLowerCase().trim()}@traptranscriptor.local`
+}
+
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -19,10 +24,12 @@ export default function LoginPage() {
     setError(null)
 
     const supabase = createClient()
+    const email = usernameToEmail(username)
+
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-      setError('Credenziali non valide. Riprova.')
+      setError('Nome utente o password errati.')
       setLoading(false)
       return
     }
@@ -35,7 +42,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900">
       <div className="w-full max-w-md px-8 py-10 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl">
 
-        {/* Logo / Titolo */}
+        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 mb-4 shadow-lg shadow-blue-600/30">
             <span className="text-white font-black text-xl tracking-tight">TT</span>
@@ -48,16 +55,17 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-1.5">
-              Email
+            <label htmlFor="username" className="block text-sm font-medium text-slate-300 mb-1.5">
+              Nome utente
             </label>
             <input
-              id="email"
-              type="email"
+              id="username"
+              type="text"
               required
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="nome@azienda.com"
+              autoComplete="username"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              placeholder="es. trap"
               className="w-full px-4 py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
             />
           </div>
@@ -70,6 +78,7 @@ export default function LoginPage() {
               id="password"
               type="password"
               required
+              autoComplete="current-password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••••"

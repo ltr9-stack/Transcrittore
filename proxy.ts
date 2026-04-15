@@ -1,57 +1,45 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function proxy(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
+// Proxy leggero — nessun import pesante, compatibile Edge runtime
+// La verifica reale della sessione avviene nei Server Components
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Proteggi tutte le route tranne /login e /api/auth
+  // Route pubbliche — passa sempre
   if (
-    !user &&
-    pathname !== '/login' &&
-    !pathname.startsWith('/api/auth') &&
-    !pathname.startsWith('/_next') &&
-    !pathname.startsWith('/favicon')
+    pathname === '/login' ||
+    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/favicon') ||
+    pathname.match(/\.(svg|png|jpg|jpeg|gif|webp|ico)$/)
   ) {
+    return NextResponse.next()
+  }
+
+  // Controlla presenza cookie di sessione Supabase
+  // Supabase SSR usa cookie nel formato sb-<ref>-auth-token
+  const projectRef = 'mrvqpdnjotqngsletbqd'
+  const hasSession =
+    request.cookies.has(`sb-${projectRef}-auth-token`) ||
+    request.cookies.has(`sb-${projectRef}-auth-token.0`) ||
+    request.cookies.has(`sb-${projectRef}-auth-token.1`) ||
+    // Formato alternativo usato da versioni più recenti
+    request.cookies.getAll().some(c => c.name.startsWith(`sb-${projectRef}`))
+
+  if (!hasSession) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Redirect utente autenticato che accede a /login
-  if (user && pathname === '/login') {
+  // Redirect utente loggato che torna su /login
+  if (pathname === '/login' && hasSession) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
     return NextResponse.redirect(url)
   }
 
-  return supabaseResponse
+  return NextResponse.next()
 }
 
 export const config = {
