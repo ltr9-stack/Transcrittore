@@ -62,7 +62,6 @@ export async function POST(
       audio_url: audioUrl,
       speaker_labels: true,
       language_code: 'it',
-      speech_model: 'universal' as unknown as 'best',
     })
   } catch (e) {
     return NextResponse.json({ error: `AssemblyAI error: ${(e as Error).message}` }, { status: 500 })
